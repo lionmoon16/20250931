@@ -9,17 +9,19 @@ let lavaColors = [
 ];
 
 let pressureWaves = []; // 壓力波 (取代 explosions)
-const WAVE_DURATION = 35; // 壓力波持續幀數
+const WAVE_DURATION = 35; // 標準壓力波持續幀數
+
+let score = 0; // 💥 NEW: 遊戲分數
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
+  // 使用 HSB 顏色模式，更方便處理顏色漸變和透明度
+  colorMode(HSB, 360, 100, 100, 255); 
   background("#301934"); // 深沉的背景色 (接近黑紫)
-  colorMode(HSB, 360, 100, 100, 255); // 使用 HSB 顏色模式，更方便處理顏色漸變
 
   // 產生 100 個氣泡的資料
   for (let i = 0; i < 100; i++) {
     let r = random(40, 120);
-    // 速度慢一點，增加流動感
     let speed = map(r, 40, 120, 1.5, 0.2); 
     
     // 隨機選擇基底色 (HSB 模式)
@@ -28,10 +30,10 @@ function setup() {
     let baseBrightness = random(80, 100);
     
     bubbles.push({
-      startX: random(width), // 紀錄起始 X 位置
+      startX: random(width), 
       y: random(height),
-      r: r, // 半徑
-      sizeScale: 1, // 用於變形
+      r: r, 
+      sizeScale: 1, 
       wobbleOffset: random(1000), // 晃動的 Perlin Noise 偏移量
       speed: speed,
       hue: baseHue,
@@ -49,55 +51,51 @@ function draw() {
   
   noStroke();
 
-  // --- 氣泡運動、繪製與碰撞 ---
+  // --- 氣泡運動、繪製與壓力波碰撞 ---
   for (let b of bubbles) {
     // 1. 浮動與側向晃動
     b.y -= b.speed;
     
     // 使用 noise 函式創造自然的側向晃動 (x 座標)
-    // 晃動幅度與氣泡半徑相關
     let currentX = b.startX + map(noise(b.wobbleOffset), 0, 1, -b.r / 3, b.r / 3);
-    b.wobbleOffset += 0.005; // 讓晃動緩慢變化
+    b.wobbleOffset += 0.005; 
     
     // 2. 氣泡變形 (擠壓/釋放)
-    // sizeScale 接近 1 表示圓形，小於 1 表示被壓扁
-    // 使用 lerp 讓變形更流暢
     if (b.isCompressed) {
       b.sizeScale = lerp(b.sizeScale, 0.8, 0.1); // 快速壓扁
     } else {
       b.sizeScale = lerp(b.sizeScale, 1.0, 0.05); // 緩慢恢復
     }
-    b.isCompressed = false; // 重置壓縮標記
+    b.isCompressed = false; 
 
     // 3. 繪製氣泡 (帶有內部光暈)
-    
-    // 外部光暈 (使用發光效果)
     drawingContext.shadowOffsetX = 0;
     drawingContext.shadowOffsetY = 0;
     drawingContext.shadowBlur = b.r / 4; 
     drawingContext.shadowColor = color(b.hue, b.saturation, b.brightness, 150);
     
-    // 內部顏色
-    fill(b.hue, b.saturation, b.brightness, 150); // 高亮度、中等透明度
+    fill(b.hue, b.saturation, b.brightness, 150); 
     ellipse(currentX, b.y, b.r * b.sizeScale, b.r / b.sizeScale); // 橢圓變形
     
-    drawingContext.shadowBlur = 0; // 重置光暈
+    drawingContext.shadowBlur = 0; 
 
     // 4. 檢查是否進入任一壓力區域 (壓力波中心)
     for (let w of pressureWaves) {
-      // 檢查氣泡中心到壓力波中心的距離
-      let d = dist(currentX, b.y, w.x, w.y);
-      
-      // 壓力波作用的半徑 (隨時間擴大)
-      let waveRadius = map(w.timer, 0, WAVE_DURATION, 0, 300); 
-      let waveThickness = 50; // 壓力波厚度
-      
-      // 如果氣泡在壓力波的圓環範圍內，觸發變形
-      if (d > waveRadius - waveThickness && d < waveRadius + waveThickness) {
-        b.isCompressed = true;
-        // 調整氣泡的 X 座標以模擬被波推動
-        let angle = atan2(b.y - w.y, currentX - w.x); // 計算氣泡與波中心連線的角度
-        currentX += cos(angle) * 0.5; // 稍微向外推動
+      // 壓力波只會影響到畫面上方的氣泡 (即未被擊中的氣泡)
+      if (w.timer > 0 && b.y < height) { 
+        let d = dist(currentX, b.y, w.x, w.y);
+        
+        // 壓力波作用的半徑與厚度
+        let duration = w.duration || WAVE_DURATION;
+        let maxRadius = w.maxRadius || 300;
+        
+        let waveRadius = map(w.timer, 0, duration, 0, maxRadius); 
+        let waveThickness = 50; 
+        
+        // 如果氣泡在壓力波的圓環範圍內，觸發變形
+        if (d > waveRadius - waveThickness && d < waveRadius + waveThickness) {
+          b.isCompressed = true;
+        }
       }
     }
 
@@ -108,34 +106,25 @@ function draw() {
     }
   }
 
-  // --- 自動產生壓力波 ---
-  // 每 120 幀（約 2 秒）自動產生一個壓力波
-  if (frameCount % 120 === 0) {
-    pressureWaves.push({
-      x: random(width),
-      y: random(height),
-      timer: 0,
-      color1: color(random(lavaColors)), // 外圈顏色
-      color2: color(random(lavaColors)) // 內圈顏色
-    });
-  }
-
-  // --- 繪製壓力波 ---
+  // --- 繪製壓力波並更新計時器 ---
   for (let w of pressureWaves) {
-    if (w.timer < WAVE_DURATION) {
-      let alpha = map(w.timer, 0, WAVE_DURATION, 100, 0); // 隨時間消散
-      let currentRadius = map(w.timer, 0, WAVE_DURATION, 10, 300); // 隨時間擴大
+    const duration = w.duration || WAVE_DURATION;
+    const maxRadius = w.maxRadius || 300;
+    
+    if (w.timer < duration) {
+      let alpha = map(w.timer, 0, duration, 100, 0); // 隨時間消散
+      let currentRadius = map(w.timer, 0, duration, 10, maxRadius); // 隨時間擴大
       
       // 繪製漸變圓環
       for (let i = 0; i < 5; i++) {
-        let waveColor = lerpColor(w.color1, w.color2, i / 5); // 顏色在兩者間漸變
+        // HSB: 顏色在兩者間漸變
+        let waveColor = lerpColor(w.color1, w.color2, i / 5); 
         waveColor.setAlpha(alpha);
         
         noFill();
         stroke(waveColor);
-        strokeWeight(3 - i * 0.5); // 讓線條稍微變細
+        strokeWeight(3 - i * 0.5); 
         
-        // 疊加多個圓環，模擬厚度和漸變
         ellipse(w.x, w.y, (currentRadius + i * 5) * 2, (currentRadius + i * 5) * 2);
       }
       
@@ -144,10 +133,63 @@ function draw() {
   }
 
   // 移除已結束的壓力波
-  pressureWaves = pressureWaves.filter(w => w.timer < WAVE_DURATION);
+  pressureWaves = pressureWaves.filter(w => w.timer < (w.duration || WAVE_DURATION));
+
+  // --- 顯示分數 ---
+  fill(255); 
+  textSize(32);
+  textStyle(BOLD);
+  textAlign(LEFT, TOP);
+  text("分數: " + score, 20, 20); 
 }
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   background("#301934");
+}
+
+/**
+ * 💥 滑鼠點擊觸發事件：產生爆破波並計算得分
+ */
+function mousePressed() {
+    // 1. 在點擊位置產生一個標準視覺化的壓力波
+    pressureWaves.push({
+        x: mouseX,
+        y: mouseY,
+        timer: 0,
+        color1: color(0, 0, 100, 255), // 白色/高亮波
+        color2: color(random(lavaColors)),
+        duration: 35, // 標準波持續時間
+        maxRadius: 300 // 標準波最大半徑
+    });
+
+    // 2. 檢查氣泡是否被擊中並加分
+    for (let i = 0; i < bubbles.length; i++) {
+        let b = bubbles[i];
+        // 計算氣泡的當前實際 X 座標 (考慮晃動)
+        let currentX = b.startX + map(noise(b.wobbleOffset), 0, 1, -b.r / 3, b.r / 3);
+        let d = dist(currentX, b.y, mouseX, mouseY);
+        
+        // 設定點擊的命中半徑 (氣泡半徑 + 緩衝區 20 像素)
+        if (d < b.r / 2 + 20) {
+            // 計算得分：氣泡越大，分數越高 (範圍 5 到 20 分)
+            let points = floor(map(b.r, 40, 120, 5, 20));
+            score += points;
+
+            // 讓氣泡消失 (移到畫面下方，等待 draw 循環將其重置)
+            b.y = height + b.r; 
+            
+            // 氣泡被擊中時，產生一個小而快的「爆破」視覺效果
+            pressureWaves.push({
+                x: currentX,
+                y: b.y - b.r, // 從氣泡消失處發出
+                timer: 0,
+                // 使用氣泡的顏色來發出爆破波
+                color1: color(b.hue, 100, 100, 255), 
+                color2: color(b.hue, 50, 80, 255),
+                duration: 15, // 較短的持續時間
+                maxRadius: 80 // 較小的半徑
+            });
+        }
+    }
 }
